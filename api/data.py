@@ -1,141 +1,97 @@
 
 import os
 import json
-import base64
 import hmac
+import urllib.request
+import urllib.error
 
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse
-
-import firebase_admin
-from firebase_admin import credentials, db
+from urllib.parse import quote
 
 
-BLOCKED_KEYS = (
-    "otp", "sms", "message", "command", "action",
-    "bomb", "token", "password", "secret",
-    "credential", "bank"
-)
+BLOCKED = {
+    "messages", "sms", "otp", "commands",
+    "actions", "bombs", "passwords", "tokens"
+}
 
 
-def clean_data(value):
-    """Remove sensitive fields from displayed data."""
-
-    if isinstance(value, dict):
-        result = {}
-
-        for key, item in value.items():
-            if any(word in key.lower() for word in BLOCKED_KEYS):
-                continue
-
-            result[key] = clean_data(item)
-
-        return result
-
-    if isinstance(value, list):
-        return [clean_data(item) for item in value]
-
-    return value
-
-
-def get_firebase_app():
-    try:
-        return firebase_admin.get_app("dashboard")
-
-    except ValueError:
-        account = json.loads(
-            os.environ["FIREBASE_SERVICE_ACCOUNT_JSON"]
-        )
-
-        credential = credentials.Certificate(account)
-
-        return firebase_admin.initialize_app(
-            credential,
-            {
-                "databaseURL": os.environ[
-                    "FIREBASE_DATABASE_URL"
-                ]
-            },
-            name="dashboard"
-        )
-
-
-def authorized(request):
-    header = request.headers.get("Authorization", "")
+def authorized(req):
+    header = req.headers.get("Authorization", "")
 
     try:
-        scheme, encoded = header.split(" ", 1)
-
-        if scheme.lower() != "basic":
-            return False
-
-        decoded = base64.b64decode(
-            encoded,
-            validate=True
-        ).decode("utf-8")
-
-        username, password = decoded.split(":", 1)
-
-        expected_user = os.environ["DASHBOARD_USER"]
-        expected_password = os.environ["DASHBOARD_PASSWORD"]
+        scheme, password = header.split(" ", 1)
 
         return (
-            hmac.compare_digest(username, expected_user)
-            and hmac.compare_digest(password, expected_password)
+            scheme.lower() == "bearer"
+            and hmac.compare_digest(
+                password,
+                os.environ["DASHBOARD_PASSWORD"]
+            )
         )
-
     except Exception:
         return False
 
 
+def get_data():
+    base_url = os.environ["FIREBASE_DATABASE_URL"].rstrip("/")
+    path = os.environ.get(
+        "FIREBASE_DATA_PATH", "public_dashboard"
+    ).strip("/")
+
+    if not path or any(
+        part.lower() in BLOCKED
+        for part in path.split("/")
+    ):
+        raise ValueError("Invalid data path")
+
+    url = f"{base_url}/{quote(path, safe='/')}.json"
+
+    request = urllib.request.Request(
+        url,
+        headers={"Accept": "application/json"}
+    )
+
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 class handler(BaseHTTPRequestHandler):
 
-    def respond(self, status, payload):
-        body = json.dumps(payload).encode("utf-8")
+    def send_json(self, status, payload):
+        body = json.dumps(payload).encode()
 
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self):
-
-        if urlparse(self.path).path != "/api/data":
-            self.respond(404, {"error": "Not found"})
+        if self.path != "/api/data":
+            self.send_json(404, {"error": "Not found"})
             return
 
         if not authorized(self):
-            self.send_response(401)
-            self.send_header(
-                "WWW-Authenticate",
-                'Basic realm="Private Dashboard"'
-            )
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+            self.send_json(401, {"error": "Unauthorized"})
             return
 
         try:
-            app = get_firebase_app()
+            data = get_data()
 
-            # Fixed path: no arbitrary root database dump.
-            ref = db.reference(
-                "public_dashboard",
-                app=app
-            )
-
-            data = ref.get()
-
-            self.respond(200, {
+            self.send_json(200, {
                 "success": True,
-                "data": clean_data(data)
+                "data": data
+            })
+
+        except urllib.error.HTTPError as error:
+            self.send_json(error.code, {
+                "success": False,
+                "error": "Firebase access denied or unavailable"
             })
 
         except Exception:
-            # Do not expose credentials or internal error details.
-            self.respond(500, {
+            self.send_json(500, {
                 "success": False,
-                "error": "Firebase connection failed"
+                "error": "Could not load Firebase data"
             })
