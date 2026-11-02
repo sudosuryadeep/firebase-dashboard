@@ -4,265 +4,158 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Firebase Control Dashboard</title>
+<title>Firebase Dashboard</title>
 
 <style>
-* {
-    box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
     margin: 0;
-    min-height: 100vh;
     background: #0b1020;
-    color: #edf2ff;
-    font-family: Inter, Arial, sans-serif;
+    color: #f1f5ff;
+    font-family: Arial, sans-serif;
 }
 
 header {
-    padding: 24px 7%;
-    border-bottom: 1px solid #252e43;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.brand {
+    padding: 23px 6%;
+    border-bottom: 1px solid #26334d;
     font-size: 21px;
-    font-weight: 800;
+    font-weight: bold;
 }
 
-.brand span {
-    color: #8b9cff;
-}
+header span { color: #8295ff; }
 
 main {
-    width: min(1050px, 92%);
+    max-width: 950px;
+    width: 92%;
     margin: 45px auto;
 }
 
 .card {
-    background: #141c30;
-    border: 1px solid #28344e;
-    border-radius: 18px;
+    background: #151e32;
+    border: 1px solid #2b3955;
+    border-radius: 17px;
     padding: 25px;
     margin-bottom: 22px;
-    box-shadow: 0 15px 45px #0003;
 }
 
-h1 {
-    font-size: clamp(25px, 5vw, 38px);
-    margin: 0 0 10px;
-}
+h1 { font-size: 32px; }
 
-.muted {
-    color: #99a7c1;
-}
+p { color: #9caecb; }
 
 input {
-    display: block;
     width: 100%;
-    margin: 12px 0;
     padding: 14px;
+    margin: 10px 0;
+    border: 1px solid #344462;
     background: #0b1325;
     color: white;
-    border: 1px solid #354363;
-    border-radius: 10px;
-    outline: none;
+    border-radius: 9px;
 }
 
 button {
-    border: 0;
     padding: 13px 20px;
-    border-radius: 10px;
+    border: none;
+    border-radius: 9px;
     background: #7186ff;
     color: white;
-    font-weight: 700;
+    font-weight: bold;
     cursor: pointer;
 }
 
-button:hover {
-    background: #899aff;
-}
-
-.top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-.status {
-    color: #ffc56e;
-    font-size: 13px;
-}
+button:hover { background: #899aff; }
 
 pre {
-    background: #090f1d;
-    color: #b7d6ff;
-    padding: 20px;
+    background: #080e1b;
     border-radius: 12px;
+    padding: 20px;
     overflow: auto;
     max-height: 550px;
-    font-size: 13px;
-    line-height: 1.7;
+    color: #b6d6ff;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
-.hidden {
-    display: none;
-}
+.hidden { display: none; }
 
-footer {
-    text-align: center;
-    padding: 30px;
-    color: #71809d;
-    font-size: 12px;
-}
+.status { color: #8ba1ff; }
 </style>
 </head>
 
 <body>
 
-<header>
-    <div class="brand">Firebase<span>Panel</span></div>
-    <div class="muted">Private Dashboard</div>
-</header>
+<header>Firebase<span>Panel</span></header>
 
 <main>
-
     <section class="card">
-        <h1>Database Overview</h1>
-        <p class="muted">
-            Secure, read-only view of approved Firebase data.
-        </p>
+        <h1>Database Dashboard</h1>
+        <p>Private read-only Firebase data viewer</p>
     </section>
 
     <section class="card" id="login">
         <h2>Admin Login</h2>
-
-        <input
-            id="username"
-            placeholder="Dashboard username"
-            autocomplete="username"
-        >
-
-        <input
-            id="password"
-            type="password"
-            placeholder="Dashboard password"
-            autocomplete="current-password"
-        >
-
-        <button onclick="connect()">Connect Firebase</button>
-
-        <p class="status" id="loginStatus"></p>
+        <input id="username" placeholder="Username">
+        <input id="password" type="password"
+               placeholder="Dashboard password">
+        <button onclick="connect()">Connect</button>
+        <p id="loginStatus"></p>
     </section>
 
-    <section class="card hidden" id="dashboard">
-
-        <div class="top">
-            <div>
-                <h2>Database Data</h2>
-                <p class="muted" id="info">
-                    Approved data only
-                </p>
-            </div>
-
-            <button onclick="refreshData()">Refresh</button>
-        </div>
-
-        <p class="status" id="status">Connecting...</p>
-
-        <pre id="output">No data loaded.</pre>
-
+    <section class="card hidden" id="panel">
+        <h2>Firebase Data</h2>
+        <p class="status" id="status">Connected</p>
+        <button onclick="loadData()">Refresh Data</button>
+        <pre id="output">Loading...</pre>
     </section>
-
 </main>
 
-<footer>
-    Private Firebase Dashboard · Read-only access
-</footer>
-
 <script>
-let authHeader = "";
+let auth = "";
 
 async function connect() {
-
-    const username =
-        document.getElementById("username").value;
-
-    const password =
-        document.getElementById("password").value;
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
 
     if (!username || !password) {
         document.getElementById("loginStatus").textContent =
-            "Enter username and password.";
+            "Enter username and password";
         return;
     }
 
-    authHeader = "Basic " + btoa(
-        unescape(encodeURIComponent(username + ":" + password))
-    );
+    auth = "Bearer " + password;
 
-    await refreshData();
-
+    await loadData();
 }
 
-async function refreshData() {
-
+async function loadData() {
     const status = document.getElementById("status");
-    const output = document.getElementById("output");
 
-    status.textContent = "Connecting to Firebase...";
+    status.textContent = "Connecting...";
 
     try {
-
         const response = await fetch("/api/data", {
-            method: "GET",
-            headers: {
-                "Authorization": authHeader
-            },
+            headers: { "Authorization": auth },
             cache: "no-store"
         });
 
-        if (response.status === 401) {
-            throw new Error("Incorrect dashboard login.");
-        }
-
-        if (!response.ok) {
-            throw new Error("Server connection failed.");
-        }
-
         const result = await response.json();
 
-        if (!result.success) {
-            throw new Error("Firebase request failed.");
+        if (!response.ok) {
+            throw new Error(result.error || "Request failed");
         }
 
-        output.textContent = JSON.stringify(
-            result.data,
-            null,
-            2
-        );
+        document.getElementById("output").textContent =
+            JSON.stringify(result.data, null, 2);
 
         document.getElementById("login").classList.add("hidden");
-        document.getElementById("dashboard").classList.remove("hidden");
+        document.getElementById("panel").classList.remove("hidden");
 
         status.textContent = "● Connected successfully";
 
-        document.getElementById("info").textContent =
-            "Approved Firebase node · Read-only";
-
     } catch (error) {
-
-        status.textContent = "● " + error.message;
-
         document.getElementById("loginStatus").textContent =
             error.message;
-
+        status.textContent = error.message;
     }
 }
 </script>
