@@ -1,7 +1,14 @@
+
 {
   "functions": {
     "api/data.py": {
       "maxDuration": 10
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/data",
+      "destination": "/api/data"
+    }
+  ]
 }
